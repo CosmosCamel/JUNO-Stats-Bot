@@ -68,10 +68,11 @@ def getJUNOMintscanStatus():
     communityPool = int(round(float(json.loads(a.text)['community_pool'][0]['amount'])/1000000))
     currentSupply = int(round(float(json.loads(a.text)['total_circulating_tokens']['supply'][-1]['amount'])/1000000))
     totalBonded = int(round(float(json.loads(a.text)['bonded_tokens'])/1000000))
-    if communityPool == None or currentSupply == None or totalBonded == None:
+    blocktime = float(json.loads(a.text)['block_time'])
+    if communityPool == None or currentSupply == None or totalBonded == None or blocktime == None:
       getJUNOMintscanStatus()
     else:
-      return communityPool,currentSupply,totalBonded
+      return communityPool,currentSupply,totalBonded, blocktime
   else:
     getJUNOMintscanStatus()
 
