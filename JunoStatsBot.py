@@ -14,22 +14,20 @@ from datetime import date,datetime,timedelta
 
 client = discord.Client()
 
-def getJUNOGecko():
+def getJUNOOsmosis():
   headers = {
-    'Host': 'api.coingecko.com',
+    'Host': 'api-osmosis.imperator.co',
     'Accept': '*/*'
   }
-  a = requests.get('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=juno-network',headers=headers,timeout=10)
+  a = requests.get('https://api-osmosis.imperator.co/tokens/v2/JUNO',headers=headers,timeout=10)
   if a.status_code == 200:
-    z = json.loads(a.text)[0]['current_price']
-    b = json.loads(a.text)[0]['market_cap']
-    x = json.loads(a.text)[0]['max_supply']
-    if z == None or b == None or x == None:
-      getJUNOGecko()
+    z = round(json.loads(a.text)[0]['price'],2)
+    if z == None:
+      getJUNOOsmosis()
     else:
-      return z,b,x
+      return z
   else:
-    getJUNOGecko()
+    getJUNOOsmosis()
 
 def getAPI():
   headers = {
@@ -79,25 +77,29 @@ def getJUNOMintscanStatus():
 
 def getGovernance(totalBonded):
   headers = {
-  'Host': 'api.mintscan.io',
-  'Accept': 'application/json, text/plain, */*'
+  'Host': 'lcd-juno.keplr.app',
+  'Accept': 'application/json, text/plain, */*',
   }
-  a = requests.get('https://api.mintscan.io/v1/juno/proposals',headers=headers,timeout=10)
+  a = requests.get('https://lcd-juno.keplr.app/gov/proposals?limit=1000',headers=headers,timeout=10)
   if a.status_code == 200:
-    proposalData = json.loads(a.text)
+    proposalData = json.loads(a.text)['result']
     activeProposals = 0
     for i in proposalData:
-      if i['proposal_status'] == 'PROPOSAL_STATUS_VOTING_PERIOD':
+      if i['status'] == 2:
         activeProposals = activeProposals + 1
     governanceData = ':scroll: `Active Proposals:` **'+str(activeProposals)+'**\n'
     if activeProposals > 0:
       for i in proposalData:
-        if i['proposal_status'] == 'PROPOSAL_STATUS_VOTING_PERIOD':
-          yesVotes = round(float(i['yes'])/1000000)
-          noVotes = round(float(i['no'])/1000000)
-          noVetoVotes = round(float(i['no_with_veto'])/1000000)
-          abstainVotes = round(float(i['abstain'])/1000000)
-          governanceData = governanceData + '> ```Proposal #'+str(i['id'])+'```:ballot_box: `Current Turnout:` **'+str(round((yesVotes+abstainVotes+noVotes+noVetoVotes)/float(totalBonded)*100,2))+'%**\n> :white_check_mark: `Yes:` **'+'{:,}'.format(yesVotes)+'**\n> :x: `No:` **'+'{:,}'.format(noVotes)+'**\n> :no_entry: `NoWithVeto:` **'+'{:,}'.format(noVetoVotes)+'**\n> :person_shrugging: `Abstain:` **'+'{:,}'.format(abstainVotes)+'**\n> :alarm_clock: `Voting End:` **'+i['voting_end_time'].replace('T',' ').split('.',1)[0]+' UTC**\n'
+        if i['status'] == 2:
+          a = requests.get('https://lcd-juno.keplr.app/gov/proposals/'+i['id']+'/tally',headers=headers,timeout=10)
+          if a.status_code == 200:
+            z = json.loads(a.text)['result']
+            yesVotes = round(float(z['yes'])/1000000)
+            noVotes = round(float(z['no'])/1000000)
+            noVetoVotes = round(float(z['no_with_veto'])/1000000)
+            abstainVotes = round(float(z['abstain'])/1000000)
+            totalVotes = yesVotes + noVotes + noVetoVotes + abstainVotes
+            governanceData = governanceData + '> ```Proposal #'+str(i['id'])+'```:ballot_box: `Current Turnout:` **'+str(round((yesVotes+abstainVotes+noVotes+noVetoVotes)/float(totalBonded)*100,2))+'%**\n> :white_check_mark: `Yes:` **'+'{:,}'.format(yesVotes)+' ('+str(round(float(yesVotes)/float(totalVotes)*100,2))+'%)**\n> :x: `No:` **'+'{:,}'.format(noVotes)+' ('+str(round(float(noVotes)/float(totalVotes)*100,2))+'%)**\n> :no_entry: `NoWithVeto:` **'+'{:,}'.format(noVetoVotes)+' ('+str(round(float(noVetoVotes)/float(totalVotes)*100,2))+'%)**\n> :person_shrugging: `Abstain:` **'+'{:,}'.format(abstainVotes)+' ('+str(round(float(abstainVotes)/float(totalVotes)*100,2))+'%)**\n> :alarm_clock: `Voting End:` **'+i['voting_end_time'].replace('T',' ').split('.',1)[0]+' UTC**\n'
     return governanceData
 
 def getBlockTime():
@@ -135,14 +137,16 @@ async def on_ready():
   while(True):
     try:
       today = date.today().strftime("%B %d, %Y")
-      price,marketCap,maxSupply = getJUNOGecko()
+      maxSupply = 185562268
+      price = getJUNOOsmosis()
       circulatingSupply = getAPI()
+      marketCap = float(price)*float(circulatingSupply)
       inflation,unbondingPeriod,maxValidators = getJUNOMintscan()
-      communityPool,currentSupply,totalBonded = getJUNOMintscanStatus()
+      communityPool,currentSupply,totalBonded,blocktime = getJUNOMintscanStatus()
       governanceData = getGovernance(totalBonded)
       bondedRatio = round(float(totalBonded/currentSupply)*100,2)
-      APR = 25961297.0 * (1-2) / float(totalBonded) * 6.247111/getBlockTime() * 100
-      messageToBeSent = ':calendar: **'+today+'** :calendar:\n**__JUNO Stats - Update/Minute__**\n\n'
+      APR = abs(round(25961297.0 * (1-2) / float(totalBonded) * 6.247111/getBlockTime() * 100,2))
+      messageToBeSent = ':calendar: **'+today+'** :calendar:\n**__JUNO Stats - Updates every 60 secs__**\n\n'
       messageToBeSent = messageToBeSent+':dollar: `Price:` **$'+str(price)+'**\n:moneybag: `Market Capitalization:` **$'+str(formatIt(marketCap))+'**\n'
       messageToBeSent = messageToBeSent+'```Supply Stats```:left_luggage: `Max Supply:` **'+'{:,}'.format(int(maxSupply))+'**\n:briefcase: `Current Supply:` **'+'{:,}'.format(currentSupply)+'**\n:recycle: `Circulating Supply:` **'+'{:,}'.format(circulatingSupply)+'**\n:classical_building: `Community Pool:` **'+'{:,}'.format(communityPool)+'**\n'
       messageToBeSent = messageToBeSent+'```Staking Stats```:trophy: `APR:` **'+str(APR)+'%**\n:printer: `Inflation:` **'+str(inflation)+'%**\n:closed_lock_with_key: `Total Bonded:` **'+'{:,}'.format(int(totalBonded))+'**\n:bar_chart: `Bonded Ratio:` **'+str(bondedRatio)+'%**\n:unlock: `Unbonding Period:` **'+str(int(unbondingPeriod))+' Days**\n:technologist: `Max Validators:` **'+str(maxValidators)+'**\n'
